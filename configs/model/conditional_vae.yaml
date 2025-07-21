@@ -1,0 +1,36 @@
+# Conditional VAE model configuration
+_target_: src.models.ConditionalVAE
+
+# Architecture (inherits from BaseVAE)
+input_channels: 1
+latent_dim: 128
+hidden_channels: 128
+ch_mult: [1, 2, 4, 8]
+num_res_blocks: 2
+attn_resolutions: [16]
+dropout: 0.0
+resolution: 224
+
+# Conditional VAE specific
+modalities:
+    [
+        "chestmnist",
+        "pathmnist",
+        "octmnist",
+        "pneumoniamnist",
+        "dermamnist",
+        "bloodmnist",
+        "tissuemnist",
+        "retinamnist",
+        "breastmnist",
+        "organamnist",
+        "organcmnist",
+        "organsmnist",
+    ]
+condition_dim: null # Will use len(modalities)
+condition_method: "concat" # "concat", "inject", "film"
+
+# Advanced options
+use_linear_attn: false
+attn_type: "vanilla"
+double_z: true

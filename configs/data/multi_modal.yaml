@@ -1,0 +1,17 @@
+# Multi-modal dataset configuration
+_target_: src.data.MedMNISTDataModule
+
+dataset_names:
+    ["chestmnist", "pathmnist", "octmnist", "pneumoniamnist", "dermamnist"]
+batch_size: 32
+num_workers: 6
+size: 224
+as_rgb: true # Convert all to RGB for consistency
+root: "${data_dir}"
+normalize: true
+augment_train: true
+
+# Multi-modal info
+task_type: "mixed" # Multiple task types
+num_classes: "variable" # Varies by dataset
+input_channels: 3

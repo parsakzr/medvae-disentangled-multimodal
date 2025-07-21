@@ -1,0 +1,2 @@
+- +experiment=chest_base_vae_quick
+- wandb.enabled=false

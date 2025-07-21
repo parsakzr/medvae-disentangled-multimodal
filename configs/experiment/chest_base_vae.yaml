@@ -1,0 +1,23 @@
+# Base VAE experiment on ChestMNIST
+# @package _global_
+defaults:
+    - override /model: base_vae
+    - override /data: chest_xray
+    - override /training: default
+
+experiment_name: "chest_base_vae"
+tags: ["base_vae", "chestmnist", "chest_xray"]
+
+model:
+    input_channels: 1
+    latent_dim: 256
+    hidden_channels: 128
+
+data:
+    batch_size: 64
+    as_rgb: false
+
+training:
+    max_epochs: 80
+    optimizer:
+        lr: 2e-4

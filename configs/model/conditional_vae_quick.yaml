@@ -1,0 +1,19 @@
+# @package _global_
+
+defaults:
+    - base_vae_quick
+
+model:
+    _target_: src.models.ConditionalVAE
+    input_channels: 3 # RGB for multi-modal
+    latent_dim: 16
+    hidden_channels: 32
+    ch_mult: [1, 2, 4]
+    num_res_blocks: 1
+    attn_resolutions: []
+    dropout: 0.1
+    resolution: 28
+    use_linear_attn: false
+    attn_type: vanilla
+    double_z: true
+    num_modalities: 4 # chest, oct, path, derm

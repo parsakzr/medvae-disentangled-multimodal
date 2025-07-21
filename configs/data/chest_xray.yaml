@@ -1,0 +1,16 @@
+# ChestMNIST dataset configuration
+_target_: src.data.MedMNISTDataModule
+
+dataset_names: ["chestmnist"]
+batch_size: 32
+num_workers: 4
+size: 224
+as_rgb: false # Keep grayscale for chest X-rays
+root: "${data_dir}"
+normalize: true
+augment_train: true
+
+# ChestMNIST specific info
+task_type: "multilabel" # 14 different chest conditions
+num_classes: 14
+input_channels: 1

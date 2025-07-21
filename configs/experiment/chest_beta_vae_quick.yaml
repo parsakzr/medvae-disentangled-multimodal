@@ -1,0 +1,30 @@
+# @package _global_
+
+# Quick Beta-VAE experiment for fast testing
+
+defaults:
+    - override /model: beta_vae_quick
+    - override /data: chest_xray_quick
+    - override /training: quick
+
+experiment_name: chest_beta_vae_quick
+project_name: medical_vae_quick
+
+tags:
+    - beta_vae
+    - medical
+    - medmnist
+    - quick
+    - chest
+
+# Override specific settings for quick training
+training:
+    max_epochs: 5
+
+data:
+    batch_size: 128 # Large batch for speed
+
+model:
+    resolution: 28
+    latent_dim: 16 # Even smaller for speed
+    beta: 4.0 # Higher beta for more disentanglement

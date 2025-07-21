@@ -1,0 +1,42 @@
+# @package _global_
+
+# Disentangled Conditional VAE experiment for modality separation
+
+defaults:
+    - override /model: disentangled_conditional_vae_quick
+    - override /data: multi_modal_quick
+    - override /training: quick
+
+experiment_name: disentangled_multi_modal_cvae_quick
+project_name: medical_vae_quick
+
+tags:
+    - disentangled_vae
+    - conditional_vae
+    - medical
+    - medmnist
+    - quick
+    - multi_modal
+    - modality_separation
+
+# Override specific settings for disentanglement training
+training:
+    max_epochs: 12 # Slightly more epochs for disentanglement
+    loss:
+        type: disentangled_vae
+        recon_loss_type: mse
+        kl_weight: 1.0
+        recon_weight: 1.0
+        separation_weight: 0.1 # Encourage modality separation
+        contrastive_weight: 0.05 # Contrastive modality clustering
+
+data:
+    batch_size: 32 # Smaller batch for more diverse modality pairs
+
+model:
+    resolution: 28
+    shared_latent_dim: 8 # Dimensions for shared features
+    modality_latent_dim: 8 # Dimensions for modality-specific features
+    num_modalities: 4
+    modality_separation_weight: 0.1
+    contrastive_weight: 0.05

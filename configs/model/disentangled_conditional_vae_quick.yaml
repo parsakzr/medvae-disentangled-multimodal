@@ -1,0 +1,20 @@
+# @package _global_
+
+model:
+    _target_: src.models.DisentangledConditionalVAE
+    input_channels: 3
+    latent_dim: 16 # This will be split: 8 shared + 8 modality-specific
+    shared_latent_dim: 8
+    modality_latent_dim: 8
+    hidden_channels: 32
+    ch_mult: [1, 2, 4]
+    num_res_blocks: 1
+    attn_resolutions: []
+    dropout: 0.1
+    resolution: 28 # Match data size
+    use_linear_attn: false
+    attn_type: vanilla
+    double_z: true
+    num_modalities: 5 # Match the actual number of datasets
+    modality_separation_weight: 0.1
+    contrastive_weight: 0.05

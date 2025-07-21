@@ -1,0 +1,18 @@
+# @package _global_
+
+defaults:
+    - base_vae
+
+model:
+    _target_: src.models.BaseVAE
+    input_channels: 1
+    latent_dim: 32 # Much smaller latent space
+    hidden_channels: 32 # Much fewer channels
+    ch_mult: [1, 2, 4] # Fewer downsampling stages
+    num_res_blocks: 1 # Single ResNet block per stage
+    attn_resolutions: [] # No attention to save parameters
+    dropout: 0.1
+    resolution: 28 # Smaller resolution
+    use_linear_attn: false
+    attn_type: vanilla
+    double_z: true

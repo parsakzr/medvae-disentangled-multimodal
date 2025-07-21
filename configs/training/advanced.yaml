@@ -1,0 +1,41 @@
+# Advanced training with LPIPS and discriminator
+max_epochs: 150
+gradient_clip_val: 1.0
+accumulate_grad_batches: 1
+
+# Optimizer
+optimizer:
+    type: "adamw"
+    lr: 2e-4
+    weight_decay: 1e-5
+    betas: [0.5, 0.999]
+
+# Learning rate scheduler
+scheduler:
+    type: "cosine"
+    T_max: 150
+    eta_min: 1e-7
+
+# Advanced loss configuration
+loss:
+    type: "lpips_discriminator"
+    discriminator_factor: 0.5
+    perceptual_factor: 1.0
+    kl_factor: 1e-6
+    discriminator_iter_start: 10000
+    use_biomedclip_loss: false
+    biomedclip_factor: 0.1
+
+# Discriminator configuration
+discriminator:
+    input_nc: 3
+    ndf: 64
+    n_layers: 3
+
+# Validation
+val_check_interval: 0.5
+check_val_every_n_epoch: 1
+
+# Logging
+log_every_n_steps: 25
+save_top_k: 5

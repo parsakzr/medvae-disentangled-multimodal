@@ -1,0 +1,16 @@
+optimizer_config:
+  type: adam
+  lr: 0.001
+  weight_decay: 0.0
+  betas:
+  - 0.9
+  - 0.999
+scheduler_config:
+  type: step
+  step_size: 5
+  gamma: 0.5
+loss_config:
+  type: vae
+  recon_loss_type: mse
+  kl_weight: 1.0
+  recon_weight: 1.0

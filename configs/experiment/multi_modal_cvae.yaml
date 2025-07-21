@@ -1,0 +1,29 @@
+# Conditional VAE experiment on multiple modalities
+# @package _global_
+defaults:
+    - override /model: conditional_vae
+    - override /data: multi_modal
+    - override /training: advanced
+
+experiment_name: "multi_modal_cvae"
+tags: ["conditional_vae", "multi_modal", "advanced"]
+
+model:
+    input_channels: 3
+    latent_dim: 256
+    hidden_channels: 256
+    condition_method: "concat"
+
+data:
+    batch_size: 24
+    as_rgb: true
+
+training:
+    max_epochs: 200
+    optimizer:
+        lr: 1e-4
+    loss:
+        type: "lpips_discriminator"
+        discriminator_factor: 0.3
+        perceptual_factor: 1.0
+        kl_factor: 1e-5

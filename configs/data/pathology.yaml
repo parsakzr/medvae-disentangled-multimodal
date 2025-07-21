@@ -1,0 +1,16 @@
+# PathMNIST dataset configuration
+_target_: src.data.MedMNISTDataModule
+
+dataset_names: ["pathmnist"]
+batch_size: 64
+num_workers: 4
+size: 224
+as_rgb: true # Convert to RGB for pathology images
+root: "${data_dir}"
+normalize: true
+augment_train: true
+
+# PathMNIST specific info
+task_type: "multiclass" # 9 tissue types
+num_classes: 9
+input_channels: 3

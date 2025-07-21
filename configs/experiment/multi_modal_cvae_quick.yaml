@@ -1,0 +1,30 @@
+# @package _global_
+
+# Quick Conditional VAE experiment for fast testing
+
+defaults:
+    - override /model: conditional_vae_quick
+    - override /data: multi_modal_quick
+    - override /training: quick
+
+experiment_name: multi_modal_cvae_quick
+project_name: medical_vae_quick
+
+tags:
+    - conditional_vae
+    - medical
+    - medmnist
+    - quick
+    - multi_modal
+
+# Override specific settings for quick training
+training:
+    max_epochs: 8
+
+data:
+    batch_size: 64 # Smaller batch for multi-modal
+
+model:
+    resolution: 28
+    latent_dim: 16 # Even smaller for speed
+    num_modalities: 4 # Match the 4 modalities in data config

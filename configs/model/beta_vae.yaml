@@ -1,0 +1,20 @@
+# Beta-VAE model configuration
+_target_: src.models.BetaVAE
+
+# Architecture (inherits from BaseVAE)
+input_channels: 1
+latent_dim: 128
+hidden_channels: 128
+ch_mult: [1, 2, 4, 8]
+num_res_blocks: 2
+attn_resolutions: [16]
+dropout: 0.0
+resolution: 224
+
+# Beta-VAE specific
+beta: 4.0
+
+# Advanced options
+use_linear_attn: false
+attn_type: "vanilla"
+double_z: true

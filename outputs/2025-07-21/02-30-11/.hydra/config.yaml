@@ -1,0 +1,158 @@
+_target_: src.data.MedMNISTDataModule
+input_channels: 3
+latent_dim: 128
+hidden_channels: 128
+ch_mult:
+- 1
+- 2
+- 4
+- 8
+num_res_blocks: 2
+attn_resolutions:
+- 16
+dropout: 0.0
+resolution: 224
+modalities:
+- chestmnist
+- pathmnist
+- octmnist
+- pneumoniamnist
+- dermamnist
+- bloodmnist
+- tissuemnist
+- retinamnist
+- breastmnist
+- organamnist
+- organcmnist
+- organsmnist
+condition_dim: null
+condition_method: concat
+use_linear_attn: false
+attn_type: vanilla
+double_z: true
+model:
+  _target_: src.models.ConditionalVAE
+  input_channels: 1
+  latent_dim: 16
+  hidden_channels: 32
+  ch_mult:
+  - 1
+  - 2
+  - 4
+  num_res_blocks: 1
+  attn_resolutions: []
+  dropout: 0.1
+  resolution: 28
+  use_linear_attn: false
+  attn_type: vanilla
+  double_z: true
+  num_modalities: 2
+dataset_names:
+- chestmnist
+- pathmnist
+- octmnist
+- pneumoniamnist
+- dermamnist
+batch_size: 32
+num_workers: 6
+size: 224
+as_rgb: true
+root: ${data_dir}
+normalize: true
+augment_train: true
+task_type: mixed
+num_classes: variable
+data:
+  _target_: src.data.MedMNISTDataModule
+  dataset_names:
+  - chestmnist
+  - pneumoniamnist
+  batch_size: 64
+  num_workers: 2
+  size: 28
+  as_rgb: false
+  root: ${data_dir}
+  normalize: true
+  augment_train: false
+  task_type: multilabel
+  num_classes: 14
+  input_channels: 1
+max_epochs: 100
+gradient_clip_val: 1.0
+accumulate_grad_batches: 1
+optimizer:
+  type: adamw
+  lr: 0.0001
+  weight_decay: 0.0001
+  betas:
+  - 0.9
+  - 0.999
+scheduler:
+  type: cosine
+  T_max: 100
+  eta_min: 1.0e-06
+loss:
+  type: vae
+  recon_loss_type: mse
+  kl_weight: 1.0
+  recon_weight: 1.0
+val_check_interval: 1.0
+check_val_every_n_epoch: 1
+log_every_n_steps: 50
+save_top_k: 3
+training:
+  max_epochs: 8
+  gradient_clip_val: 1.0
+  accumulate_grad_batches: 1
+  optimizer:
+    type: adam
+    lr: 0.001
+    weight_decay: 0.0
+    betas:
+    - 0.9
+    - 0.999
+  scheduler:
+    type: step
+    step_size: 5
+    gamma: 0.5
+  loss:
+    type: vae
+    recon_loss_type: mse
+    kl_weight: 1.0
+    recon_weight: 1.0
+  val_check_interval: 0.5
+  check_val_every_n_epoch: 1
+  log_every_n_steps: 20
+  save_top_k: 1
+experiment_name: multi_modal_cvae_quick
+project_name: medical_vae_quick
+tags:
+- conditional_vae
+- medical
+- medmnist
+- quick
+- multi_modal
+work_dir: ${oc.env:PWD}
+data_dir: ${work_dir}/data
+log_dir: ${work_dir}/logs
+checkpoint_dir: ${log_dir}/checkpoints
+device: cuda
+accelerator: gpu
+devices: 1
+precision: 16
+seed: 42
+wandb:
+  enabled: false
+  project: ${project_name}
+  name: ${experiment_name}
+  tags: ${tags}
+checkpointing:
+  save_top_k: 3
+  monitor: val/loss
+  mode: min
+  save_last: true
+early_stopping:
+  enabled: true
+  monitor: val/loss
+  patience: 20
+  mode: min

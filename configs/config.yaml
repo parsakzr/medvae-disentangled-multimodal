@@ -1,0 +1,47 @@
+# Main Hydra configuration file
+defaults:
+    - model: base_vae
+    - data: chest_xray
+    - training: default
+    - _self_
+
+# Experiment tracking
+experiment_name: "medmnist_vae"
+project_name: "medical_vae"
+tags: ["vae", "medical", "medmnist"]
+
+# Paths
+work_dir: ${oc.env:PWD}
+data_dir: "${work_dir}/data"
+log_dir: "${work_dir}/logs"
+checkpoint_dir: "${log_dir}/checkpoints"
+
+# Device
+device: "cuda"
+accelerator: "gpu"
+devices: 1
+precision: 16
+
+# Random seed
+seed: 42
+
+# Logging
+wandb:
+    enabled: true
+    project: ${project_name}
+    name: ${experiment_name}
+    tags: ${tags}
+
+# Checkpointing
+checkpointing:
+    save_top_k: 3
+    monitor: "val/loss"
+    mode: "min"
+    save_last: true
+
+# Early stopping
+early_stopping:
+    enabled: true
+    monitor: "val/loss"
+    patience: 20
+    mode: "min"

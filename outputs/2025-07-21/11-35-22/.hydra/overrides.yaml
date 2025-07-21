@@ -1,0 +1,4 @@
+- model=disentangled_conditional_vae_quick
+- data=multi_modal_quick
+- data.as_rgb=true
+- data.input_channels=3

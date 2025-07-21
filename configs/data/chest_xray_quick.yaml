@@ -1,0 +1,19 @@
+# @package _global_
+
+defaults:
+    - chest_xray
+
+data:
+    _target_: src.data.MedMNISTDataModule
+    dataset_names:
+        - chestmnist
+    batch_size: 64 # Larger batch size for faster training
+    num_workers: 2 # Fewer workers for lighter load
+    size: 28 # Smaller images
+    as_rgb: false
+    root: ${data_dir}
+    normalize: true
+    augment_train: false # No augmentation for speed
+    task_type: multilabel
+    num_classes: 14
+    input_channels: 1

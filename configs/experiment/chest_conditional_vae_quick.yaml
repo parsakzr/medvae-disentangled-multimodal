@@ -1,0 +1,20 @@
+# @package _global_
+
+defaults:
+    - default
+    - model: conditional_vae_quick
+    - data: chest_xray_quick
+    - training: quick
+
+experiment_name: chest_conditional_vae_quick
+project_name: medical_vae_quick
+
+tags:
+    - conditional_vae
+    - medical
+    - medmnist
+    - quick
+    - chest
+
+model:
+    num_modalities: 1 # Single modality for simplicity
