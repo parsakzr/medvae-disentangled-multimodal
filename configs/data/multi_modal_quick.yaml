@@ -6,17 +6,17 @@ defaults:
 data:
     _target_: src.data.MedMNISTDataModule
     dataset_names:
-        - chestmnist # Grayscale: Chest X-Ray
-        - octmnist # Grayscale: Retinal OCT
-        - pathmnist # RGB: Colon Pathology
-        - dermamnist # RGB: Dermatoscope
-    batch_size: 32 # Smaller batch for multi-modal
+        - chestmnist # Grayscale: Chest X-Ray (1 channel)
+        - octmnist # Color: Retinal OCT (3 channels)
+        - pathmnist # Color: Colon Pathology (3 channels)
+        - dermamnist # Color: Dermatoscope (3 channels)
+        - pneumoniamnist # Grayscale: Chest X-Ray Pneumonia (1 channel)
+    batch_size: 16 # Smaller batch for multi-modal with mixed channels
     num_workers: 2 # Fewer workers for lighter load
-    size: 28 # Smaller images
-    as_rgb: true # Convert all to RGB for consistency
+    size: 28 # Smaller images for faster training
     root: ${data_dir}
     normalize: true
     augment_train: false # No augmentation for speed
     task_type: multilabel
     num_classes: 14
-    input_channels: 3 # RGB output
+    # Note: input_channels is now modality-specific

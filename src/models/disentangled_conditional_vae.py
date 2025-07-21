@@ -18,18 +18,25 @@ class DisentangledConditionalVAE(BaseVAE):
     Key improvements:
     1. Partitioned latent space: [z_shared, z_modality_specific]
     2. Modality contrastive loss
-    3. Modality-specific encoders/decoders
+    3. Modality-specific encoders/decoders with proper channel handling
     4. Regularization for modality separation
     """
 
     def __init__(
         self,
-        num_modalities: int = 4,
+        num_modalities: int = 5,
         shared_latent_dim: int = 8,
         modality_latent_dim: int = 8,
         modality_separation_weight: float = 1.0,
         contrastive_weight: float = 0.5,
-        resolution: int = 28,  # Explicitly handle resolution
+        resolution: int = 28,
+        hidden_channels: int = 128,
+        ch_mult: Tuple[int, ...] = (1, 2, 4, 8),
+        num_res_blocks: int = 2,
+        attn_resolutions: list = [16],
+        dropout: float = 0.0,
+        use_linear_attn: bool = False,
+        attn_type: str = "vanilla",
         **kwargs,
     ):
         # Store our specific parameters before calling super
@@ -41,8 +48,25 @@ class DisentangledConditionalVAE(BaseVAE):
 
         # Modify total latent_dim for partitioned space
         total_latent_dim = shared_latent_dim + modality_latent_dim
-        kwargs["latent_dim"] = total_latent_dim
-        kwargs["resolution"] = resolution
+        
+        # Define channel requirements for each modality
+        self.modality_channels = self._get_modality_channel_map()
+        
+        # Use max channels for base VAE - we'll handle modality-specific processing separately
+        max_channels = max(self.modality_channels.values())
+        
+        kwargs.update({
+            "latent_dim": total_latent_dim,
+            "resolution": resolution,
+            "input_channels": max_channels,  # Base VAE uses max channels
+            "hidden_channels": hidden_channels,
+            "ch_mult": ch_mult,
+            "num_res_blocks": num_res_blocks,
+            "attn_resolutions": attn_resolutions,
+            "dropout": dropout,
+            "use_linear_attn": use_linear_attn,
+            "attn_type": attn_type,
+        })
 
         # Call parent constructor
         super().__init__(**kwargs)
@@ -50,135 +74,86 @@ class DisentangledConditionalVAE(BaseVAE):
         # Store resolution for our use
         self.resolution = resolution
 
-        # Now we can safely access self.resolution and other BaseVAE attributes
+        # Create modality-specific input projection layers
+        self.modality_input_projectors = nn.ModuleDict()
+        for modality_idx, channels in self.modality_channels.items():
+            if channels != max_channels:
+                # Create projection layer to convert to max_channels
+                self.modality_input_projectors[str(modality_idx)] = nn.Conv2d(
+                    channels, max_channels, kernel_size=1, padding=0
+                )
+
+        # Create modality-specific output projection layers  
+        self.modality_output_projectors = nn.ModuleDict()
+        for modality_idx, channels in self.modality_channels.items():
+            if channels != max_channels:
+                # Create projection layer to convert from max_channels back to modality channels
+                self.modality_output_projectors[str(modality_idx)] = nn.Conv2d(
+                    max_channels, channels, kernel_size=1, padding=0
+                )
 
         # Modality embedding for conditioning
         self.modality_embedding = nn.Embedding(num_modalities, 64)
 
-        # Modality-specific projection layers for encoder
-        # Note: We'll compute the actual projection size dynamically in create_modality_condition_map
-        self.modality_projections = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Linear(64, 128),
-                    nn.ReLU(),
-                    nn.Linear(128, 512),  # Fixed size, we'll adapt dynamically
-                )
-                for _ in range(num_modalities)
-            ]
-        )
-
-        # Modify encoder input to accept modality conditioning
-        # We'll store the original conv_in and replace it dynamically in encode()
-        self.original_conv_in = self.encoder.conv_in
-
-        # Modality-specific decoder heads
-        self.modality_decoders = nn.ModuleList(
-            [
-                nn.Sequential(
-                    nn.Conv2d(self.input_channels, self.input_channels, 3, 1, 1),
-                    nn.ReLU(),
-                    nn.Conv2d(self.input_channels, self.input_channels, 3, 1, 1),
-                )
-                for _ in range(num_modalities)
-            ]
-        )
-
-    def create_modality_condition_map(
-        self, modality_indices: torch.Tensor, height: int, width: int
-    ) -> torch.Tensor:
-        """Create spatial modality condition map."""
-        batch_size = modality_indices.shape[0]
-
-        # Get modality embeddings
-        modality_embeds = self.modality_embedding(modality_indices)  # [B, 64]
-
-        # Calculate target size for projection
-        target_size = self.input_channels * height * width
-
-        # Project to spatial dimensions with adaptive linear layer
-        condition_maps = []
-        for i in range(batch_size):
-            modality_idx = modality_indices[i].item()
-
-            # Get base projection (fixed size 512)
-            base_proj = self.modality_projections[modality_idx](
-                modality_embeds[i : i + 1]
-            )  # [1, 512]
-
-            # Adapt to target size
-            if base_proj.shape[1] != target_size:
-                # Use adaptive pooling or linear layer to match target size
-                if base_proj.shape[1] > target_size:
-                    # Downsample
-                    adapted_proj = F.adaptive_avg_pool1d(
-                        base_proj.unsqueeze(1), target_size
-                    ).squeeze(1)
-                else:
-                    # Upsample by repeating and truncating
-                    repeat_factor = (target_size // base_proj.shape[1]) + 1
-                    repeated = base_proj.repeat(1, repeat_factor)
-                    adapted_proj = repeated[:, :target_size]
-            else:
-                adapted_proj = base_proj
-
-            condition_map = adapted_proj.view(
-                self.input_channels, height, width
-            )  # [C, H, W]
-            condition_maps.append(condition_map)
-
-        return torch.stack(condition_maps, dim=0)  # [B, C, H, W]
+        # Modality-specific decoder heads for final processing
+        self.modality_decoders = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(max_channels, max_channels, 3, 1, 1),
+                nn.ReLU(),
+                nn.Conv2d(max_channels, max_channels, 3, 1, 1),
+            )
+            for _ in range(num_modalities)
+        ])
+    
+    def _get_modality_channel_map(self) -> Dict[int, int]:
+        """Define channel requirements for each modality."""
+        # Map modality indices to channel counts
+        # Based on the modality mapping in the data module
+        return {
+            0: 1,  # chestmnist - grayscale X-ray
+            1: 3,  # pathmnist - color pathology  
+            2: 3,  # octmnist - color OCT
+            3: 1,  # pneumoniamnist - grayscale X-ray
+            4: 3,  # dermamnist - color dermatoscope
+        }
 
     def encode(
         self, x: torch.Tensor, modality_indices: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Encode with modality conditioning."""
-        # Create modality condition map
-        condition_map = self.create_modality_condition_map(
-            modality_indices, x.shape[2], x.shape[3]
-        )
-
-        # Concatenate input with condition
-        conditioned_input = torch.cat([x, condition_map], dim=1)
-
-        # Dynamically adjust conv_in if needed
-        input_channels = conditioned_input.shape[1]
-        if self.encoder.conv_in.in_channels != input_channels:
-            # Create new conv_in with correct input channels
-            original_conv = self.original_conv_in
-            self.encoder.conv_in = nn.Conv2d(
-                input_channels,
-                original_conv.out_channels,
-                kernel_size=original_conv.kernel_size,
-                stride=original_conv.stride,
-                padding=original_conv.padding,
-                device=original_conv.weight.device,
-                dtype=original_conv.weight.dtype,
-            )
-            # Initialize weights (simple approach)
-            with torch.no_grad():
-                # Copy original weights for the first input_channels
-                original_weight = original_conv.weight
-                new_weight = torch.zeros_like(self.encoder.conv_in.weight)
-
-                # Handle different numbers of input channels
-                min_channels = min(original_weight.shape[1], input_channels)
-                new_weight[:, :min_channels] = original_weight[:, :min_channels]
-
-                # Initialize additional channels (if any) with small random values
-                if input_channels > original_weight.shape[1]:
-                    remaining_channels = input_channels - original_weight.shape[1]
-                    new_weight[:, -remaining_channels:] = (
-                        torch.randn_like(new_weight[:, -remaining_channels:]) * 0.01
-                    )
-
-                self.encoder.conv_in.weight.copy_(new_weight)
-                if original_conv.bias is not None:
-                    self.encoder.conv_in.bias.copy_(original_conv.bias)
-
-        # Encode
-        mu, logvar = super().encode(conditioned_input)
-
+        """Encode with modality-specific channel handling."""
+        batch_size = x.shape[0]
+        processed_inputs = []
+        
+        # Process each sample according to its modality
+        for i in range(batch_size):
+            sample = x[i:i+1]  # Keep batch dimension
+            modality_idx = int(modality_indices[i].item())
+            
+            # Ensure modality_idx is within bounds
+            if modality_idx >= len(self.modality_channels):
+                print(f"Warning: modality_idx {modality_idx} is out of range for modality_channels. Using modality {len(self.modality_channels)-1}")
+                modality_idx = len(self.modality_channels) - 1
+            
+            # Get the expected number of channels for this modality
+            expected_channels = self.modality_channels[modality_idx]
+            
+            # Extract only the relevant channels (remove padding if any)
+            if sample.shape[1] > expected_channels:
+                sample = sample[:, :expected_channels, :, :]
+            
+            # Project input channels if needed
+            projector_key = str(modality_idx)
+            if projector_key in self.modality_input_projectors:
+                sample = self.modality_input_projectors[projector_key](sample)
+            
+            processed_inputs.append(sample)
+        
+        # Concatenate processed inputs
+        processed_x = torch.cat(processed_inputs, dim=0)
+        
+        # Encode using base VAE
+        mu, logvar = super().encode(processed_x)
+        
         return mu, logvar
 
     def partition_latent(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -230,22 +205,54 @@ class DisentangledConditionalVAE(BaseVAE):
     def decode(
         self, z: torch.Tensor, modality_indices: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
-        """Decode with optional modality-specific processing."""
-        # Standard decode
+        """Decode with modality-specific channel handling."""
+        # Standard decode - outputs in max_channels format
         reconstruction = super().decode(z)
-
-        # Apply modality-specific processing if modality provided
+        
         if modality_indices is not None:
             batch_size = reconstruction.shape[0]
-            processed_recons = []
+            processed_outputs = []
+            max_output_channels = 0
 
+            # First pass: process all samples and find max channels
+            temp_outputs = []
             for i in range(batch_size):
-                modality_idx = modality_indices[i].item()
-                modality_decoder = self.modality_decoders[modality_idx]
-                processed_recon = modality_decoder(reconstruction[i : i + 1])
-                processed_recons.append(processed_recon)
+                sample = reconstruction[i:i+1]  # Keep batch dimension
+                modality_idx = int(modality_indices[i].item())
 
-            reconstruction = torch.cat(processed_recons, dim=0)
+                # Ensure modality_idx is within bounds
+                if modality_idx >= len(self.modality_decoders):
+                    # If modality index is out of range, use the last available decoder
+                    print(f"Warning: modality_idx {modality_idx} is out of range. Using modality {len(self.modality_decoders)-1}")
+                    modality_idx = len(self.modality_decoders) - 1
+
+                # Apply modality-specific processing
+                modality_decoder = self.modality_decoders[modality_idx]
+                processed_sample = modality_decoder(sample)
+
+                # Project back to modality-specific channels if needed
+                projector_key = str(modality_idx)
+                if projector_key in self.modality_output_projectors:
+                    processed_sample = self.modality_output_projectors[projector_key](processed_sample)
+
+                temp_outputs.append(processed_sample)
+                max_output_channels = max(max_output_channels, processed_sample.shape[1])
+
+            # Second pass: pad to max channels and concatenate
+            for processed_sample in temp_outputs:
+                if processed_sample.shape[1] < max_output_channels:
+                    # Pad with zeros to match max channels
+                    padding_shape = (
+                        processed_sample.shape[0],
+                        max_output_channels - processed_sample.shape[1],
+                        *processed_sample.shape[2:]
+                    )
+                    padding = torch.zeros(padding_shape, dtype=processed_sample.dtype, device=processed_sample.device)
+                    processed_sample = torch.cat([processed_sample, padding], dim=1)
+                
+                processed_outputs.append(processed_sample)
+
+            reconstruction = torch.cat(processed_outputs, dim=0)
 
         return reconstruction
 

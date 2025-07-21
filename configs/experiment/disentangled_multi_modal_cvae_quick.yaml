@@ -37,6 +37,6 @@ model:
     resolution: 28
     shared_latent_dim: 8 # Dimensions for shared features
     modality_latent_dim: 8 # Dimensions for modality-specific features
-    num_modalities: 4
+    num_modalities: 5 # Match the 5 datasets: chestmnist, octmnist, pathmnist, dermamnist, pneumoniamnist
     modality_separation_weight: 0.1
     contrastive_weight: 0.05

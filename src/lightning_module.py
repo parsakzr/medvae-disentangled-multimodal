@@ -96,14 +96,18 @@ class VAELightningModule(L.LightningModule):
             return self.model(x)
 
     def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
     ):
         """Training step."""
-        if len(batch) == 3:
+        if len(batch) == 4:
+            x, labels, modality, modality_indices = batch
+        elif len(batch) == 3:
             x, labels, modality = batch
+            modality_indices = None
         else:
             x, labels = batch
             modality = None
+            modality_indices = None
 
         # Forward pass
         if (
@@ -111,8 +115,10 @@ class VAELightningModule(L.LightningModule):
             and modality is not None
         ):
             if isinstance(self.model, DisentangledConditionalVAE):
-                # Convert one-hot modality to indices for DisentangledConditionalVAE
-                modality_indices = torch.argmax(modality, dim=1)
+                # Use modality indices directly for DisentangledConditionalVAE
+                if modality_indices is None:
+                    # Fallback: convert one-hot modality to indices
+                    modality_indices = torch.argmax(modality, dim=1)
                 outputs = self.model(x, modality_indices)
             else:
                 outputs = self.model(x, modality)
@@ -196,14 +202,18 @@ class VAELightningModule(L.LightningModule):
             return loss
 
     def validation_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
     ):
         """Validation step."""
-        if len(batch) == 3:
+        if len(batch) == 4:
+            x, labels, modality, modality_indices = batch
+        elif len(batch) == 3:
             x, labels, modality = batch
+            modality_indices = None
         else:
             x, labels = batch
             modality = None
+            modality_indices = None
 
         # Forward pass
         if (
@@ -211,8 +221,10 @@ class VAELightningModule(L.LightningModule):
             and modality is not None
         ):
             if isinstance(self.model, DisentangledConditionalVAE):
-                # Convert one-hot modality to indices for DisentangledConditionalVAE
-                modality_indices = torch.argmax(modality, dim=1)
+                # Use modality indices directly for DisentangledConditionalVAE
+                if modality_indices is None:
+                    # Fallback: convert one-hot modality to indices
+                    modality_indices = torch.argmax(modality, dim=1)
                 outputs = self.model(x, modality_indices)
             else:
                 outputs = self.model(x, modality)
@@ -244,12 +256,18 @@ class VAELightningModule(L.LightningModule):
                     split="val",
                 )
             else:
-                loss_dict = self.criterion(
-                    inputs=x,
-                    reconstructions=outputs["reconstruction"],
-                    posteriors=outputs["posterior"],
-                    priors=outputs["prior"],
-                )
+                # Check if this is a disentangled VAE loss
+                if hasattr(self.criterion, "separation_weight"):
+                    # DisentangledVAELoss expects different parameters
+                    loss_dict = self.criterion(outputs, x)
+                else:
+                    # Standard VAE loss
+                    loss_dict = self.criterion(
+                        inputs=x,
+                        reconstructions=outputs["reconstruction"],
+                        posteriors=outputs["posterior"],
+                        priors=outputs["prior"],
+                    )
                 loss = loss_dict["loss"]
         else:
             # Fallback to MSE
@@ -335,15 +353,21 @@ class VAELightningModule(L.LightningModule):
         val_dataloader = self.trainer.datamodule.val_dataloader()
         batch = next(iter(val_dataloader))
 
-        if len(batch) == 3:
+        if len(batch) == 4:
+            x, labels, modality, modality_indices = batch
+        elif len(batch) == 3:
             x, labels, modality = batch
+            modality_indices = None
         else:
             x, labels = batch
             modality = None
+            modality_indices = None
 
         x = x[:8].to(self.device)  # Take first 8 samples
         if modality is not None:
             modality = modality[:8].to(self.device)
+        if modality_indices is not None:
+            modality_indices = modality_indices[:8].to(self.device)
 
         with torch.no_grad():
             # Reconstructions
@@ -352,9 +376,12 @@ class VAELightningModule(L.LightningModule):
                 and modality is not None
             ):
                 if isinstance(self.model, DisentangledConditionalVAE):
-                    # Convert one-hot modality to indices for DisentangledConditionalVAE
-                    modality_indices = torch.argmax(modality, dim=1)
-                    outputs = self.model(x, modality_indices)
+                    # Use modality_indices directly if available, otherwise convert from one-hot
+                    if modality_indices is not None:
+                        model_modality_indices = modality_indices
+                    else:
+                        model_modality_indices = torch.argmax(modality, dim=1)
+                    outputs = self.model(x, model_modality_indices)
                 else:
                     outputs = self.model(x, modality)
             else:

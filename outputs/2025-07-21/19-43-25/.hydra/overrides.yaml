@@ -1,0 +1,3 @@
+- +experiment=disentangled_multi_modal_cvae_quick
+- training.max_epochs=10
+- wandb.enabled=false
