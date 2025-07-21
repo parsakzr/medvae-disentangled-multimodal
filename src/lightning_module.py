@@ -96,7 +96,9 @@ class VAELightningModule(L.LightningModule):
             return self.model(x)
 
     def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
+        self,
+        batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+        batch_idx: int,
     ):
         """Training step."""
         if len(batch) == 4:
@@ -180,7 +182,9 @@ class VAELightningModule(L.LightningModule):
                 # Add numerical stability check for disentangled loss
                 for key, value in loss_dict.items():
                     if torch.isnan(value).any() or torch.isinf(value).any():
-                        print(f"Warning: NaN/Inf detected in training {key}, replacing with zero")
+                        print(
+                            f"Warning: NaN/Inf detected in training {key}, replacing with zero"
+                        )
                         loss_dict[key] = torch.tensor(0.0, device=value.device)
             else:
                 # Standard VAE loss
@@ -192,10 +196,12 @@ class VAELightningModule(L.LightningModule):
                 )
 
             loss = loss_dict["loss"]
-            
+
             # Final check for NaN/Inf in training loss
             if torch.isnan(loss).any() or torch.isinf(loss).any():
-                print("Warning: NaN/Inf detected in training loss, replacing with large value")
+                print(
+                    "Warning: NaN/Inf detected in training loss, replacing with large value"
+                )
                 loss = torch.tensor(1e6, device=loss.device)
 
             # Log losses
@@ -212,7 +218,9 @@ class VAELightningModule(L.LightningModule):
             return loss
 
     def validation_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
+        self,
+        batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+        batch_idx: int,
     ):
         """Validation step."""
         if len(batch) == 4:
@@ -273,7 +281,9 @@ class VAELightningModule(L.LightningModule):
                     # Add numerical stability check for disentangled loss
                     for key, value in loss_dict.items():
                         if torch.isnan(value).any() or torch.isinf(value).any():
-                            print(f"Warning: NaN/Inf detected in validation {key}, replacing with zero")
+                            print(
+                                f"Warning: NaN/Inf detected in validation {key}, replacing with zero"
+                            )
                             loss_dict[key] = torch.tensor(0.0, device=value.device)
                 else:
                     # Standard VAE loss
@@ -287,10 +297,12 @@ class VAELightningModule(L.LightningModule):
         else:
             # Fallback to MSE
             loss = nn.functional.mse_loss(outputs["reconstruction"], x)
-        
+
         # Final check for NaN/Inf in validation loss
         if torch.isnan(loss).any() or torch.isinf(loss).any():
-            print("Warning: NaN/Inf detected in validation loss, replacing with large value")
+            print(
+                "Warning: NaN/Inf detected in validation loss, replacing with large value"
+            )
             loss = torch.tensor(1e6, device=loss.device)
 
         self.log("val/loss", loss, prog_bar=True, logger=True, on_epoch=True)
@@ -298,7 +310,9 @@ class VAELightningModule(L.LightningModule):
         return outputs
 
     def test_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
+        self,
+        batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
+        batch_idx: int,
     ):
         """Test step."""
         if len(batch) == 4:
@@ -435,11 +449,21 @@ class VAELightningModule(L.LightningModule):
         else:
             return optimizers
 
-    def configure_gradient_clipping(self, optimizer, optimizer_idx=0, gradient_clip_val=None, gradient_clip_algorithm=None):
+    def configure_gradient_clipping(
+        self,
+        optimizer,
+        optimizer_idx=0,
+        gradient_clip_val=None,
+        gradient_clip_algorithm=None,
+    ):
         """Configure gradient clipping to prevent gradient explosion."""
         if gradient_clip_val is not None and gradient_clip_val > 0:
             # Clip gradients by norm
-            self.clip_gradients(optimizer, gradient_clip_val=gradient_clip_val, gradient_clip_algorithm=gradient_clip_algorithm or "norm")
+            self.clip_gradients(
+                optimizer,
+                gradient_clip_val=gradient_clip_val,
+                gradient_clip_algorithm=gradient_clip_algorithm or "norm",
+            )
 
     def on_before_optimizer_step(self, optimizer, optimizer_idx=0):
         """Called before optimizer step - good place to check gradients."""
@@ -447,7 +471,9 @@ class VAELightningModule(L.LightningModule):
         for name, param in self.model.named_parameters():
             if param.grad is not None:
                 if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
-                    print(f"Warning: NaN/Inf gradient detected in {name}, zeroing gradients")
+                    print(
+                        f"Warning: NaN/Inf gradient detected in {name}, zeroing gradients"
+                    )
                     param.grad.zero_()
 
     def on_validation_epoch_end(self):

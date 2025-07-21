@@ -48,25 +48,27 @@ class DisentangledConditionalVAE(BaseVAE):
 
         # Modify total latent_dim for partitioned space
         total_latent_dim = shared_latent_dim + modality_latent_dim
-        
+
         # Define channel requirements for each modality
         self.modality_channels = self._get_modality_channel_map()
-        
+
         # Use max channels for base VAE - we'll handle modality-specific processing separately
         max_channels = max(self.modality_channels.values())
-        
-        kwargs.update({
-            "latent_dim": total_latent_dim,
-            "resolution": resolution,
-            "input_channels": max_channels,  # Base VAE uses max channels
-            "hidden_channels": hidden_channels,
-            "ch_mult": ch_mult,
-            "num_res_blocks": num_res_blocks,
-            "attn_resolutions": attn_resolutions,
-            "dropout": dropout,
-            "use_linear_attn": use_linear_attn,
-            "attn_type": attn_type,
-        })
+
+        kwargs.update(
+            {
+                "latent_dim": total_latent_dim,
+                "resolution": resolution,
+                "input_channels": max_channels,  # Base VAE uses max channels
+                "hidden_channels": hidden_channels,
+                "ch_mult": ch_mult,
+                "num_res_blocks": num_res_blocks,
+                "attn_resolutions": attn_resolutions,
+                "dropout": dropout,
+                "use_linear_attn": use_linear_attn,
+                "attn_type": attn_type,
+            }
+        )
 
         # Call parent constructor
         super().__init__(**kwargs)
@@ -83,7 +85,7 @@ class DisentangledConditionalVAE(BaseVAE):
                     channels, max_channels, kernel_size=1, padding=0
                 )
 
-        # Create modality-specific output projection layers  
+        # Create modality-specific output projection layers
         self.modality_output_projectors = nn.ModuleDict()
         for modality_idx, channels in self.modality_channels.items():
             if channels != max_channels:
@@ -96,22 +98,24 @@ class DisentangledConditionalVAE(BaseVAE):
         self.modality_embedding = nn.Embedding(num_modalities, 64)
 
         # Modality-specific decoder heads for final processing
-        self.modality_decoders = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(max_channels, max_channels, 3, 1, 1),
-                nn.ReLU(),
-                nn.Conv2d(max_channels, max_channels, 3, 1, 1),
-            )
-            for _ in range(num_modalities)
-        ])
-    
+        self.modality_decoders = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(max_channels, max_channels, 3, 1, 1),
+                    nn.ReLU(),
+                    nn.Conv2d(max_channels, max_channels, 3, 1, 1),
+                )
+                for _ in range(num_modalities)
+            ]
+        )
+
     def _get_modality_channel_map(self) -> Dict[int, int]:
         """Define channel requirements for each modality."""
         # Map modality indices to channel counts
         # Based on the modality mapping in the data module
         return {
             0: 1,  # chestmnist - grayscale X-ray
-            1: 3,  # pathmnist - color pathology  
+            1: 3,  # pathmnist - color pathology
             2: 3,  # octmnist - color OCT
             3: 1,  # pneumoniamnist - grayscale X-ray
             4: 3,  # dermamnist - color dermatoscope
@@ -123,61 +127,69 @@ class DisentangledConditionalVAE(BaseVAE):
         """Encode with modality-specific channel handling."""
         batch_size = x.shape[0]
         processed_inputs = []
-        
+
         # Add input validation
         if torch.isnan(x).any():
             print("Warning: NaN detected in input tensor x")
             x = torch.where(torch.isnan(x), torch.zeros_like(x), x)
-        
+
         # Process each sample according to its modality
         for i in range(batch_size):
-            sample = x[i:i+1]  # Keep batch dimension
+            sample = x[i : i + 1]  # Keep batch dimension
             modality_idx = int(modality_indices[i].item())
-            
+
             # Ensure modality_idx is within bounds
             if modality_idx >= len(self.modality_channels):
-                print(f"Warning: modality_idx {modality_idx} is out of range for modality_channels. Using modality {len(self.modality_channels)-1}")
+                print(
+                    f"Warning: modality_idx {modality_idx} is out of range for modality_channels. Using modality {len(self.modality_channels)-1}"
+                )
                 modality_idx = len(self.modality_channels) - 1
-            
+
             # Get the expected number of channels for this modality
             expected_channels = self.modality_channels[modality_idx]
-            
+
             # Extract only the relevant channels (remove padding if any)
             if sample.shape[1] > expected_channels:
                 sample = sample[:, :expected_channels, :, :]
-            
+
             # Project input channels if needed
             projector_key = str(modality_idx)
             if projector_key in self.modality_input_projectors:
                 sample = self.modality_input_projectors[projector_key](sample)
-                
+
                 # Check for NaN after projection
                 if torch.isnan(sample).any():
-                    print(f"Warning: NaN detected after projection for modality {modality_idx}")
-                    sample = torch.where(torch.isnan(sample), torch.zeros_like(sample), sample)
-            
+                    print(
+                        f"Warning: NaN detected after projection for modality {modality_idx}"
+                    )
+                    sample = torch.where(
+                        torch.isnan(sample), torch.zeros_like(sample), sample
+                    )
+
             processed_inputs.append(sample)
-        
+
         # Concatenate processed inputs
         processed_x = torch.cat(processed_inputs, dim=0)
-        
+
         # Final input validation
         if torch.isnan(processed_x).any():
             print("Warning: NaN detected in processed input, replacing with zeros")
-            processed_x = torch.where(torch.isnan(processed_x), torch.zeros_like(processed_x), processed_x)
-        
+            processed_x = torch.where(
+                torch.isnan(processed_x), torch.zeros_like(processed_x), processed_x
+            )
+
         # Encode using base VAE
         mu, logvar = super().encode(processed_x)
-        
+
         # Check encoder output for NaN
         if torch.isnan(mu).any():
             print("Warning: NaN detected in encoder mu output")
             mu = torch.where(torch.isnan(mu), torch.zeros_like(mu), mu)
-            
+
         if torch.isnan(logvar).any():
             print("Warning: NaN detected in encoder logvar output")
             logvar = torch.where(torch.isnan(logvar), torch.zeros_like(logvar), logvar)
-        
+
         return mu, logvar
 
     def partition_latent(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -232,7 +244,7 @@ class DisentangledConditionalVAE(BaseVAE):
         """Decode with modality-specific channel handling."""
         # Standard decode - outputs in max_channels format
         reconstruction = super().decode(z)
-        
+
         if modality_indices is not None:
             batch_size = reconstruction.shape[0]
             processed_outputs = []
@@ -241,13 +253,15 @@ class DisentangledConditionalVAE(BaseVAE):
             # First pass: process all samples and find max channels
             temp_outputs = []
             for i in range(batch_size):
-                sample = reconstruction[i:i+1]  # Keep batch dimension
+                sample = reconstruction[i : i + 1]  # Keep batch dimension
                 modality_idx = int(modality_indices[i].item())
 
                 # Ensure modality_idx is within bounds
                 if modality_idx >= len(self.modality_decoders):
                     # If modality index is out of range, use the last available decoder
-                    print(f"Warning: modality_idx {modality_idx} is out of range. Using modality {len(self.modality_decoders)-1}")
+                    print(
+                        f"Warning: modality_idx {modality_idx} is out of range. Using modality {len(self.modality_decoders)-1}"
+                    )
                     modality_idx = len(self.modality_decoders) - 1
 
                 # Apply modality-specific processing
@@ -257,10 +271,14 @@ class DisentangledConditionalVAE(BaseVAE):
                 # Project back to modality-specific channels if needed
                 projector_key = str(modality_idx)
                 if projector_key in self.modality_output_projectors:
-                    processed_sample = self.modality_output_projectors[projector_key](processed_sample)
+                    processed_sample = self.modality_output_projectors[projector_key](
+                        processed_sample
+                    )
 
                 temp_outputs.append(processed_sample)
-                max_output_channels = max(max_output_channels, processed_sample.shape[1])
+                max_output_channels = max(
+                    max_output_channels, processed_sample.shape[1]
+                )
 
             # Second pass: pad to max channels and concatenate
             for processed_sample in temp_outputs:
@@ -269,11 +287,15 @@ class DisentangledConditionalVAE(BaseVAE):
                     padding_shape = (
                         processed_sample.shape[0],
                         max_output_channels - processed_sample.shape[1],
-                        *processed_sample.shape[2:]
+                        *processed_sample.shape[2:],
                     )
-                    padding = torch.zeros(padding_shape, dtype=processed_sample.dtype, device=processed_sample.device)
+                    padding = torch.zeros(
+                        padding_shape,
+                        dtype=processed_sample.dtype,
+                        device=processed_sample.device,
+                    )
                     processed_sample = torch.cat([processed_sample, padding], dim=1)
-                
+
                 processed_outputs.append(processed_sample)
 
             reconstruction = torch.cat(processed_outputs, dim=0)
@@ -311,15 +333,15 @@ class DisentangledConditionalVAE(BaseVAE):
                 for j in range(i + 1, n_centroids):
                     dist = torch.norm(centroids[i] - centroids[j], p=2)
                     distances.append(dist)
-            
+
             if len(distances) == 0:
                 return torch.tensor(0.0, device=z.device)
-            
+
             distances = torch.stack(distances)
         else:
             # Use pdist for other devices
             distances = torch.pdist(centroids, p=2)
-            
+
             if distances.numel() == 0:
                 return torch.tensor(0.0, device=z.device)
         separation_loss = -distances.mean()  # Negative to maximize distances
@@ -378,14 +400,14 @@ class DisentangledConditionalVAE(BaseVAE):
         if torch.isnan(mu).any():
             print("Warning: NaN detected in mu, replacing with zeros")
             mu = torch.where(torch.isnan(mu), torch.zeros_like(mu), mu)
-        
+
         if torch.isnan(logvar).any():
             print("Warning: NaN detected in logvar, replacing with zeros")
             logvar = torch.where(torch.isnan(logvar), torch.zeros_like(logvar), logvar)
-        
+
         # Clamp logvar to prevent extreme values
         logvar = torch.clamp(logvar, min=-10.0, max=10.0)
-        
+
         # Clamp mu to reasonable range
         mu = torch.clamp(mu, min=-10.0, max=10.0)
 
@@ -403,7 +425,7 @@ class DisentangledConditionalVAE(BaseVAE):
         # Ensure standard deviation is positive and stable
         std = torch.exp(0.5 * logvar)
         std = torch.clamp(std, min=1e-6, max=10.0)  # Prevent zero or extreme std
-        
+
         prior = Normal(torch.zeros_like(mu), torch.ones_like(std))
         posterior = Normal(mu, std)
 
@@ -501,23 +523,31 @@ class DisentangledVAELoss(nn.Module):
         # KL divergence with numerical stability
         kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         kl_loss = kl_loss / targets.numel()  # Normalize by number of elements
-        
+
         # Add numerical stability checks
         if torch.isnan(recon_loss).any() or torch.isinf(recon_loss).any():
-            print("Warning: NaN/Inf detected in reconstruction loss, replacing with zero")
-            recon_loss = torch.tensor(0.0, device=reconstruction.device, dtype=recon_loss.dtype)
-            
+            print(
+                "Warning: NaN/Inf detected in reconstruction loss, replacing with zero"
+            )
+            recon_loss = torch.tensor(
+                0.0, device=reconstruction.device, dtype=recon_loss.dtype
+            )
+
         if torch.isnan(kl_loss).any() or torch.isinf(kl_loss).any():
             print("Warning: NaN/Inf detected in KL loss, replacing with zero")
             kl_loss = torch.tensor(0.0, device=mu.device, dtype=kl_loss.dtype)
-            
+
         if torch.isnan(separation_loss).any() or torch.isinf(separation_loss).any():
             print("Warning: NaN/Inf detected in separation loss, replacing with zero")
-            separation_loss = torch.tensor(0.0, device=separation_loss.device, dtype=separation_loss.dtype)
-            
+            separation_loss = torch.tensor(
+                0.0, device=separation_loss.device, dtype=separation_loss.dtype
+            )
+
         if torch.isnan(contrastive_loss).any() or torch.isinf(contrastive_loss).any():
             print("Warning: NaN/Inf detected in contrastive loss, replacing with zero")
-            contrastive_loss = torch.tensor(0.0, device=contrastive_loss.device, dtype=contrastive_loss.dtype)
+            contrastive_loss = torch.tensor(
+                0.0, device=contrastive_loss.device, dtype=contrastive_loss.dtype
+            )
 
         # Total loss
         total_loss = (
@@ -526,11 +556,13 @@ class DisentangledVAELoss(nn.Module):
             + self.separation_weight * separation_loss
             + self.contrastive_weight * contrastive_loss
         )
-        
+
         # Final check on total loss
         if torch.isnan(total_loss).any() or torch.isinf(total_loss).any():
             print("Warning: NaN/Inf detected in total loss, replacing with large value")
-            total_loss = torch.tensor(1e6, device=total_loss.device, dtype=total_loss.dtype)
+            total_loss = torch.tensor(
+                1e6, device=total_loss.device, dtype=total_loss.dtype
+            )
 
         return {
             "loss": total_loss,

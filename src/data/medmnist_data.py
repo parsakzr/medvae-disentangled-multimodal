@@ -16,7 +16,7 @@ from medmnist import INFO
 def mixed_modality_collate_fn(batch):
     """
     Custom collate function that handles mixed channel dimensions.
-    
+
     Since the DisentangledConditionalVAE model processes each sample individually
     with its own input projector, we need to handle mixed channel batches carefully.
     We'll create a batch where each sample keeps its original channel count,
@@ -24,13 +24,13 @@ def mixed_modality_collate_fn(batch):
     """
     # Separate the batch components
     images, labels, modalities, modality_indices = zip(*batch)
-    
+
     # For mixed channel batches, we'll store images as a list of tensors
     # and let the model handle them individually in its encode method
-    # 
+    #
     # But PyTorch DataLoader expects tensor outputs, so we need to create
     # same-sized tensors. We'll group by channel count.
-    
+
     # Group by channel count
     channel_groups = {}
     for i, img in enumerate(images):
@@ -38,19 +38,19 @@ def mixed_modality_collate_fn(batch):
         if channels not in channel_groups:
             channel_groups[channels] = []
         channel_groups[channels].append(i)
-    
+
     # If all images have the same channel count, use normal collation
     if len(channel_groups) == 1:
         images_tensor = torch.stack(images)
         labels_tensor = torch.stack(labels)
-        modalities_tensor = torch.stack(modalities) 
+        modalities_tensor = torch.stack(modalities)
         modality_indices_tensor = torch.stack(modality_indices)
         return images_tensor, labels_tensor, modalities_tensor, modality_indices_tensor
-    
+
     # For mixed channels, we need to pad to the same size for PyTorch batching
     # The model will handle the channel projection internally
     max_channels = max(img.shape[0] for img in images)
-    
+
     padded_images = []
     for img in images:
         if img.shape[0] < max_channels:
@@ -62,13 +62,13 @@ def mixed_modality_collate_fn(batch):
         else:
             padded_img = img
         padded_images.append(padded_img)
-    
+
     # Stack all components
     images_tensor = torch.stack(padded_images)
     labels_tensor = torch.stack(labels)
     modalities_tensor = torch.stack(modalities)
     modality_indices_tensor = torch.stack(modality_indices)
-    
+
     return images_tensor, labels_tensor, modalities_tensor, modality_indices_tensor
 
 
@@ -129,7 +129,7 @@ class MedMNISTDataset(Dataset):
         # Create modality mapping for conditioning
         self.modality_map = self._create_modality_map()
         self.modality_idx = self.modality_map[self.dataset_name]
-        
+
         # Determine target channels for this modality
         self.target_channels = self._get_modality_channels()
 
@@ -150,28 +150,28 @@ class MedMNISTDataset(Dataset):
             "organsmnist",  # Abdominal CT (Sagittal)
         ]
         return {name: idx for idx, name in enumerate(modalities)}
-    
+
     def _get_modality_channels(self) -> int:
         """Get the natural number of channels for this modality."""
         # Define natural channel counts for each modality type
         grayscale_modalities = {
-            "chestmnist",      # X-Ray should stay grayscale
+            "chestmnist",  # X-Ray should stay grayscale
             "pneumoniamnist",  # X-Ray should stay grayscale
-            "organamnist",     # CT scans are grayscale
-            "organcmnist",     # CT scans are grayscale 
-            "organsmnist",     # CT scans are grayscale
+            "organamnist",  # CT scans are grayscale
+            "organcmnist",  # CT scans are grayscale
+            "organsmnist",  # CT scans are grayscale
         }
-        
+
         rgb_modalities = {
-            "pathmnist",       # Pathology images are naturally color
-            "dermamnist",      # Dermatoscope images are naturally color
-            "retinamnist",     # Fundus camera images are naturally color
-            "bloodmnist",      # Blood microscopy can be color
-            "tissuemnist",     # Tissue microscopy can be color
-            "octmnist",        # OCT images can be color/pseudo-color
-            "breastmnist",     # Ultrasound can be pseudo-color
+            "pathmnist",  # Pathology images are naturally color
+            "dermamnist",  # Dermatoscope images are naturally color
+            "retinamnist",  # Fundus camera images are naturally color
+            "bloodmnist",  # Blood microscopy can be color
+            "tissuemnist",  # Tissue microscopy can be color
+            "octmnist",  # OCT images can be color/pseudo-color
+            "breastmnist",  # Ultrasound can be pseudo-color
         }
-        
+
         if self.dataset_name in grayscale_modalities:
             return 1
         elif self.dataset_name in rgb_modalities:
@@ -183,7 +183,9 @@ class MedMNISTDataset(Dataset):
     def __len__(self) -> int:
         return len(self.dataset)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(
+        self, idx: int
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Get item from dataset.
 
@@ -242,7 +244,7 @@ class MedMNISTDataset(Dataset):
         # Create modality one-hot vector
         modality = torch.zeros(len(self.modality_map))
         modality[self.modality_idx] = 1.0
-        
+
         # Create modality index tensor
         modality_idx_tensor = torch.tensor(self.modality_idx).long()
 
@@ -286,10 +288,10 @@ class MedMNISTDataModule(L.LightningDataModule):
 
         # Setup transforms
         self._setup_transforms()
-        
+
         # Store modality channel information
         self._setup_modality_info()
-    
+
     def _setup_modality_info(self):
         """Setup modality information including channel counts."""
         # Create a dummy dataset instance to get modality info
@@ -300,18 +302,18 @@ class MedMNISTDataModule(L.LightningDataModule):
             size=self.size,
             root=self.root,
         )
-        
+
         # Get modality info
         self.modality_map = dummy_dataset.modality_map
         self.num_modalities = len(self.modality_map)
-        
+
         # Get channel info for each modality
         self.modality_channels = {}
         for dataset_name in self.dataset_names:
             print(f"Loading modality info for {dataset_name}...")
             temp_dataset = MedMNISTDataset(
                 dataset_name=dataset_name,
-                split="train", 
+                split="train",
                 transform=None,
                 size=self.size,
                 root=self.root,
@@ -338,15 +340,17 @@ class MedMNISTDataModule(L.LightningDataModule):
                 ]
             )
 
-        # Note: Normalization will be applied per-modality since different modalities 
+        # Note: Normalization will be applied per-modality since different modalities
         # have different channel counts. We'll handle this in the dataset __getitem__ method.
-        
+
         self.train_transform_base = transforms.Compose(train_transforms)
         self.val_transform_base = transforms.Compose(base_transforms)
-        
+
         # We'll create modality-specific normalizations in _get_modality_transform
-    
-    def _get_modality_transform(self, dataset_name: str, train: bool = True) -> transforms.Compose:
+
+    def _get_modality_transform(
+        self, dataset_name: str, train: bool = True
+    ) -> transforms.Compose:
         """Get modality-specific transform including normalization."""
         # Get channel count for this modality
         temp_dataset = MedMNISTDataset(
@@ -357,22 +361,24 @@ class MedMNISTDataModule(L.LightningDataModule):
             root=self.root,
         )
         channels = temp_dataset.target_channels
-        
+
         # Start with base transforms
         if train:
             transform_list = list(self.train_transform_base.transforms)
         else:
             transform_list = list(self.val_transform_base.transforms)
-        
+
         # Add normalization based on channel count
         if self.normalize:
             if channels == 1:
                 # Grayscale normalization
                 transform_list.append(transforms.Normalize(mean=[0.5], std=[0.5]))
             elif channels == 3:
-                # RGB normalization  
-                transform_list.append(transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]))
-        
+                # RGB normalization
+                transform_list.append(
+                    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+                )
+
         return transforms.Compose(transform_list)
 
     def setup(self, stage: Optional[str] = None):
