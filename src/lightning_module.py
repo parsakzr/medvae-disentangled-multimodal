@@ -177,6 +177,11 @@ class VAELightningModule(L.LightningModule):
             if hasattr(self.criterion, "separation_weight"):
                 # DisentangledVAELoss expects different parameters
                 loss_dict = self.criterion(outputs, x)
+                # Add numerical stability check for disentangled loss
+                for key, value in loss_dict.items():
+                    if torch.isnan(value).any() or torch.isinf(value).any():
+                        print(f"Warning: NaN/Inf detected in training {key}, replacing with zero")
+                        loss_dict[key] = torch.tensor(0.0, device=value.device)
             else:
                 # Standard VAE loss
                 loss_dict = self.criterion(
@@ -187,6 +192,11 @@ class VAELightningModule(L.LightningModule):
                 )
 
             loss = loss_dict["loss"]
+            
+            # Final check for NaN/Inf in training loss
+            if torch.isnan(loss).any() or torch.isinf(loss).any():
+                print("Warning: NaN/Inf detected in training loss, replacing with large value")
+                loss = torch.tensor(1e6, device=loss.device)
 
             # Log losses
             for key, value in loss_dict.items():
@@ -260,6 +270,92 @@ class VAELightningModule(L.LightningModule):
                 if hasattr(self.criterion, "separation_weight"):
                     # DisentangledVAELoss expects different parameters
                     loss_dict = self.criterion(outputs, x)
+                    # Add numerical stability check for disentangled loss
+                    for key, value in loss_dict.items():
+                        if torch.isnan(value).any() or torch.isinf(value).any():
+                            print(f"Warning: NaN/Inf detected in validation {key}, replacing with zero")
+                            loss_dict[key] = torch.tensor(0.0, device=value.device)
+                else:
+                    # Standard VAE loss
+                    loss_dict = self.criterion(
+                        inputs=x,
+                        reconstructions=outputs["reconstruction"],
+                        posteriors=outputs["posterior"],
+                        priors=outputs["prior"],
+                    )
+                loss = loss_dict["loss"]
+        else:
+            # Fallback to MSE
+            loss = nn.functional.mse_loss(outputs["reconstruction"], x)
+        
+        # Final check for NaN/Inf in validation loss
+        if torch.isnan(loss).any() or torch.isinf(loss).any():
+            print("Warning: NaN/Inf detected in validation loss, replacing with large value")
+            loss = torch.tensor(1e6, device=loss.device)
+
+        self.log("val/loss", loss, prog_bar=True, logger=True, on_epoch=True)
+
+        return outputs
+
+    def test_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
+    ):
+        """Test step."""
+        if len(batch) == 4:
+            x, labels, modality, modality_indices = batch
+        elif len(batch) == 3:
+            x, labels, modality = batch
+            modality_indices = None
+        else:
+            x, labels = batch
+            modality = None
+            modality_indices = None
+
+        # Forward pass
+        if (
+            isinstance(self.model, (ConditionalVAE, DisentangledConditionalVAE))
+            and modality is not None
+        ):
+            if isinstance(self.model, DisentangledConditionalVAE):
+                # Use modality indices directly for DisentangledConditionalVAE
+                if modality_indices is None:
+                    # Fallback: convert one-hot modality to indices
+                    modality_indices = torch.argmax(modality, dim=1)
+                outputs = self.model(x, modality_indices)
+            else:
+                outputs = self.model(x, modality)
+        else:
+            outputs = self.model(x)
+
+        # Compute metrics
+        recon_metrics = compute_reconstruction_metrics(x, outputs["reconstruction"])
+        kl_metrics = compute_kl_metrics(outputs["mean"], outputs["logvar"])
+
+        # Log metrics
+        for key, value in recon_metrics.items():
+            self.log(f"test/{key}", value, prog_bar=False, logger=True, on_epoch=True)
+
+        for key, value in kl_metrics.items():
+            self.log(f"test/{key}", value, prog_bar=False, logger=True, on_epoch=True)
+
+        # Compute total loss for monitoring
+        if hasattr(self.criterion, "__call__"):
+            if self.use_discriminator:
+                loss, _ = self.criterion(
+                    inputs=x,
+                    reconstructions=outputs["reconstruction"],
+                    latent=outputs["z"],
+                    posteriors=outputs["posterior"],
+                    optimizer_idx=0,
+                    global_step=self.global_step,
+                    last_layer=self.model.decoder.conv_out,
+                    split="test",
+                )
+            else:
+                # Check if this is a disentangled VAE loss
+                if hasattr(self.criterion, "separation_weight"):
+                    # DisentangledVAELoss expects different parameters
+                    loss_dict = self.criterion(outputs, x)
                 else:
                     # Standard VAE loss
                     loss_dict = self.criterion(
@@ -273,7 +369,7 @@ class VAELightningModule(L.LightningModule):
             # Fallback to MSE
             loss = nn.functional.mse_loss(outputs["reconstruction"], x)
 
-        self.log("val/loss", loss, prog_bar=True, logger=True, on_epoch=True)
+        self.log("test/loss", loss, prog_bar=True, logger=True, on_epoch=True)
 
         return outputs
 
@@ -338,6 +434,21 @@ class VAELightningModule(L.LightningModule):
             return optimizers, schedulers
         else:
             return optimizers
+
+    def configure_gradient_clipping(self, optimizer, optimizer_idx=0, gradient_clip_val=None, gradient_clip_algorithm=None):
+        """Configure gradient clipping to prevent gradient explosion."""
+        if gradient_clip_val is not None and gradient_clip_val > 0:
+            # Clip gradients by norm
+            self.clip_gradients(optimizer, gradient_clip_val=gradient_clip_val, gradient_clip_algorithm=gradient_clip_algorithm or "norm")
+
+    def on_before_optimizer_step(self, optimizer, optimizer_idx=0):
+        """Called before optimizer step - good place to check gradients."""
+        # Check for NaN/Inf gradients
+        for name, param in self.model.named_parameters():
+            if param.grad is not None:
+                if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                    print(f"Warning: NaN/Inf gradient detected in {name}, zeroing gradients")
+                    param.grad.zero_()
 
     def on_validation_epoch_end(self):
         """Log sample images at end of validation."""

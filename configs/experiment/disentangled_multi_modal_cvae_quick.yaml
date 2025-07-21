@@ -22,6 +22,10 @@ tags:
 # Override specific settings for disentanglement training
 training:
     max_epochs: 12 # Slightly more epochs for disentanglement
+    gradient_clip_val: 0.5 # Stronger gradient clipping for numerical stability
+    gradient_clip_algorithm: norm
+    optimizer:
+        lr: 0.0005 # Reduced learning rate for stability
     loss:
         type: disentangled_vae
         recon_loss_type: mse
