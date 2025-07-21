@@ -190,13 +190,23 @@ def main():
             all_samples.append(samples)
             all_modalities.extend([modality_idx] * num_samples_per_modality)
 
-        # Combine all samples
-        all_samples = torch.cat(all_samples, dim=0)
+        # Don't concatenate samples with different channel sizes
+        # Instead, process them separately and store as a list
+        processed_samples = []
+        for modality_idx, samples in enumerate(all_samples):
+            # Convert to numpy and normalize
+            samples_np = samples.cpu().numpy()
+            samples_np = (samples_np + 1) / 2  # Convert from [-1, 1] to [0, 1]
+            samples_np = np.clip(samples_np, 0, 1)
+            processed_samples.append(samples_np)
 
-        # Convert to numpy and normalize
-        all_samples = all_samples.cpu().numpy()
-        all_samples = (all_samples + 1) / 2  # Convert from [-1, 1] to [0, 1]
-        all_samples = np.clip(all_samples, 0, 1)
+        # Flatten the processed samples for easier indexing
+        all_samples_flat = []
+        for modality_idx, samples_np in enumerate(processed_samples):
+            for sample_idx in range(samples_np.shape[0]):
+                all_samples_flat.append(samples_np[sample_idx])
+
+        all_samples = all_samples_flat
 
     # Create a grid visualization with modality labels
     total_samples = len(all_samples)

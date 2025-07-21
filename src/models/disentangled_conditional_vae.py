@@ -124,6 +124,11 @@ class DisentangledConditionalVAE(BaseVAE):
         batch_size = x.shape[0]
         processed_inputs = []
         
+        # Add input validation
+        if torch.isnan(x).any():
+            print("Warning: NaN detected in input tensor x")
+            x = torch.where(torch.isnan(x), torch.zeros_like(x), x)
+        
         # Process each sample according to its modality
         for i in range(batch_size):
             sample = x[i:i+1]  # Keep batch dimension
@@ -145,14 +150,33 @@ class DisentangledConditionalVAE(BaseVAE):
             projector_key = str(modality_idx)
             if projector_key in self.modality_input_projectors:
                 sample = self.modality_input_projectors[projector_key](sample)
+                
+                # Check for NaN after projection
+                if torch.isnan(sample).any():
+                    print(f"Warning: NaN detected after projection for modality {modality_idx}")
+                    sample = torch.where(torch.isnan(sample), torch.zeros_like(sample), sample)
             
             processed_inputs.append(sample)
         
         # Concatenate processed inputs
         processed_x = torch.cat(processed_inputs, dim=0)
         
+        # Final input validation
+        if torch.isnan(processed_x).any():
+            print("Warning: NaN detected in processed input, replacing with zeros")
+            processed_x = torch.where(torch.isnan(processed_x), torch.zeros_like(processed_x), processed_x)
+        
         # Encode using base VAE
         mu, logvar = super().encode(processed_x)
+        
+        # Check encoder output for NaN
+        if torch.isnan(mu).any():
+            print("Warning: NaN detected in encoder mu output")
+            mu = torch.where(torch.isnan(mu), torch.zeros_like(mu), mu)
+            
+        if torch.isnan(logvar).any():
+            print("Warning: NaN detected in encoder logvar output")
+            logvar = torch.where(torch.isnan(logvar), torch.zeros_like(logvar), logvar)
         
         return mu, logvar
 
@@ -287,14 +311,17 @@ class DisentangledConditionalVAE(BaseVAE):
                 for j in range(i + 1, n_centroids):
                     dist = torch.norm(centroids[i] - centroids[j], p=2)
                     distances.append(dist)
+            
+            if len(distances) == 0:
+                return torch.tensor(0.0, device=z.device)
+            
+            distances = torch.stack(distances)
         else:
             # Use pdist for other devices
             distances = torch.pdist(centroids, p=2)
-
-        if len(distances) == 0:
-            return torch.tensor(0.0, device=z.device)
-
-        distances = torch.stack(distances)
+            
+            if distances.numel() == 0:
+                return torch.tensor(0.0, device=z.device)
         separation_loss = -distances.mean()  # Negative to maximize distances
 
         return separation_loss
@@ -346,6 +373,22 @@ class DisentangledConditionalVAE(BaseVAE):
         # Encode with modality conditioning
         mu, logvar = self.encode(x, modality_indices)
 
+        # Add numerical stability checks to prevent NaN values
+        # Check for NaN values and replace with zeros if found
+        if torch.isnan(mu).any():
+            print("Warning: NaN detected in mu, replacing with zeros")
+            mu = torch.where(torch.isnan(mu), torch.zeros_like(mu), mu)
+        
+        if torch.isnan(logvar).any():
+            print("Warning: NaN detected in logvar, replacing with zeros")
+            logvar = torch.where(torch.isnan(logvar), torch.zeros_like(logvar), logvar)
+        
+        # Clamp logvar to prevent extreme values
+        logvar = torch.clamp(logvar, min=-10.0, max=10.0)
+        
+        # Clamp mu to reasonable range
+        mu = torch.clamp(mu, min=-10.0, max=10.0)
+
         # Sample latent
         z = self.reparameterize(mu, logvar)
 
@@ -357,8 +400,12 @@ class DisentangledConditionalVAE(BaseVAE):
         contrastive_loss_val = self.contrastive_loss(z, modality_indices)
 
         # Create distributions for loss computation (match BaseVAE)
-        prior = Normal(torch.zeros_like(mu), torch.ones_like(logvar))
-        posterior = Normal(mu, torch.exp(0.5 * logvar))
+        # Ensure standard deviation is positive and stable
+        std = torch.exp(0.5 * logvar)
+        std = torch.clamp(std, min=1e-6, max=10.0)  # Prevent zero or extreme std
+        
+        prior = Normal(torch.zeros_like(mu), torch.ones_like(std))
+        posterior = Normal(mu, std)
 
         # Create output dictionary
         output = {
@@ -451,9 +498,26 @@ class DisentangledVAELoss(nn.Module):
         # Reconstruction loss
         recon_loss = self.recon_criterion(reconstruction, targets)
 
-        # KL divergence
+        # KL divergence with numerical stability
         kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         kl_loss = kl_loss / targets.numel()  # Normalize by number of elements
+        
+        # Add numerical stability checks
+        if torch.isnan(recon_loss).any() or torch.isinf(recon_loss).any():
+            print("Warning: NaN/Inf detected in reconstruction loss, replacing with zero")
+            recon_loss = torch.tensor(0.0, device=reconstruction.device, dtype=recon_loss.dtype)
+            
+        if torch.isnan(kl_loss).any() or torch.isinf(kl_loss).any():
+            print("Warning: NaN/Inf detected in KL loss, replacing with zero")
+            kl_loss = torch.tensor(0.0, device=mu.device, dtype=kl_loss.dtype)
+            
+        if torch.isnan(separation_loss).any() or torch.isinf(separation_loss).any():
+            print("Warning: NaN/Inf detected in separation loss, replacing with zero")
+            separation_loss = torch.tensor(0.0, device=separation_loss.device, dtype=separation_loss.dtype)
+            
+        if torch.isnan(contrastive_loss).any() or torch.isinf(contrastive_loss).any():
+            print("Warning: NaN/Inf detected in contrastive loss, replacing with zero")
+            contrastive_loss = torch.tensor(0.0, device=contrastive_loss.device, dtype=contrastive_loss.dtype)
 
         # Total loss
         total_loss = (
@@ -462,6 +526,11 @@ class DisentangledVAELoss(nn.Module):
             + self.separation_weight * separation_loss
             + self.contrastive_weight * contrastive_loss
         )
+        
+        # Final check on total loss
+        if torch.isnan(total_loss).any() or torch.isinf(total_loss).any():
+            print("Warning: NaN/Inf detected in total loss, replacing with large value")
+            total_loss = torch.tensor(1e6, device=total_loss.device, dtype=total_loss.dtype)
 
         return {
             "loss": total_loss,
